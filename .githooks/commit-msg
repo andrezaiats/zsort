@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# commit-msg hook — validates Conventional Commits v1.0.0
+# https://www.conventionalcommits.org/en/v1.0.0/
+#
+
+msg_file="$1"
+msg=$(head -1 "$msg_file")
+
+# Allow merge commits
+if echo "$msg" | grep -qE '^Merge '; then
+    exit 0
+fi
+
+# <type>[optional scope][optional !]: <description>
+pattern='^(feat|fix|build|chore|ci|docs|style|refactor|perf|test|revert)(\([a-zA-Z0-9_/ -]+\))?!?: .+$'
+
+if ! echo "$msg" | grep -qE "$pattern"; then
+    echo "ERROR: commit message does not follow Conventional Commits v1.0.0"
+    echo ""
+    echo "  Format: <type>[optional scope][optional !]: <description>"
+    echo ""
+    echo "  Types: feat, fix, build, chore, ci, docs, style, refactor, perf, test, revert"
+    echo ""
+    echo "  Examples:"
+    echo "    feat: add parallel output phase"
+    echo "    fix(sort): handle empty input files"
+    echo "    refactor!: rewrite line discovery phase"
+    echo "    docs(readme): update benchmark results"
+    echo ""
+    echo "  Your message: $msg"
+    exit 1
+fi
