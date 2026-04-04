@@ -70,6 +70,19 @@ zsort reads from a file and writes to a file or stdout.
 ./zsort input.txt /dev/null
 ```
 
+### Thread Count
+
+By default, zsort uses all available CPU cores. You can override this with the
+`ZSORT_THREADS` environment variable:
+
+```bash
+# Use exactly 44 threads (e.g., physical cores only on a 44c/88t system)
+ZSORT_THREADS=44 ./zsort input.txt output.txt
+```
+
+On NUMA systems with hyperthreading, limiting to the number of physical cores
+can halve CPU usage without impacting wall-clock time.
+
 ## 📋 Input Format
 
 - Any text file with `\n`-delimited lines
