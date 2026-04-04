@@ -476,8 +476,15 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    nthreads = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (nthreads < 1) nthreads = 1;
+    {
+        const char *env = getenv("ZSORT_THREADS");
+        if (env && atoi(env) > 0) {
+            nthreads = atoi(env);
+        } else {
+            nthreads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        }
+        if (nthreads < 1) nthreads = 1;
+    }
 
     /* Open and mmap input */
     int in_fd = open(argv[1], O_RDONLY);
