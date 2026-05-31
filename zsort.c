@@ -19,8 +19,7 @@
 typedef struct {
     uint64_t    key;    /* first 8 bytes as big-endian uint64 (prefix compare) */
     const char *ptr;    /* pointer to line start in mmap'd input */
-    uint32_t    len;    /* line length excluding newline */
-    uint32_t    _pad;
+    size_t      len;    /* line length excluding newline */
 } line_t;
 
 /* ── Inline comparison ─────────────────────────────────────────────── */
@@ -29,7 +28,7 @@ static inline int line_cmp(const line_t *a, const line_t *b)
 {
     if (a->key != b->key)
         return (a->key < b->key) ? -1 : 1;
-    uint32_t min_len = a->len < b->len ? a->len : b->len;
+    size_t min_len = a->len < b->len ? a->len : b->len;
     int r = memcmp(a->ptr, b->ptr, min_len);
     if (r != 0) return r;
     return (a->len > b->len) - (a->len < b->len);
@@ -37,7 +36,7 @@ static inline int line_cmp(const line_t *a, const line_t *b)
 
 /* ── Build prefix key (first 8 bytes as big-endian uint64) ─────────── */
 
-static inline uint64_t make_key(const char *ptr, uint32_t len)
+static inline uint64_t make_key(const char *ptr, size_t len)
 {
     uint64_t k;
     const unsigned char *s = (const unsigned char *)ptr;
@@ -238,9 +237,11 @@ static void *thread_func(void *arg)
                 my_count++;
                 p = nl + 1;
             } else {
-                /* Last thread, trailing line with no newline */
-                if (tid == nthreads - 1)
-                    my_count++;
+                /* Trailing line with no newline. Only the single thread
+                   whose region reaches end-of-input hits this case, so it
+                   owns the unterminated tail line — count it for any tid.
+                   Must match the record-building loop in Phase 1c. */
+                my_count++;
                 break;
             }
         }
@@ -285,18 +286,17 @@ static void *thread_func(void *arg)
         while (p < end) {
             const char *line_start = p;
             const char *nl = memchr(p, '\n', (size_t)(end - p));
-            uint32_t len;
+            size_t len;
             if (nl) {
-                len = (uint32_t)(nl - line_start);
+                len = (size_t)(nl - line_start);
                 p = nl + 1;
             } else {
-                len = (uint32_t)(end - line_start);
+                len = (size_t)(end - line_start);
                 p = end;
             }
             records_a[write_idx].key = make_key(line_start, len);
             records_a[write_idx].ptr = line_start;
             records_a[write_idx].len = len;
-            records_a[write_idx]._pad = 0;
             write_idx++;
         }
     }
@@ -314,6 +314,7 @@ static void *thread_func(void *arg)
                 num_samples = total_lines;
 
             line_t *samples = (line_t *)malloc(num_samples * sizeof(line_t));
+            if (!samples) { perror("malloc samples"); _exit(1); }
             size_t step = total_lines / num_samples;
             if (step == 0) step = 1;
             for (size_t i = 0; i < num_samples; i++)
@@ -322,6 +323,7 @@ static void *thread_func(void *arg)
             introsort(samples, num_samples);
 
             splitters = (line_t *)malloc((size_t)(num_buckets - 1) * sizeof(line_t));
+            if (!splitters) { perror("malloc splitters"); _exit(1); }
             for (int i = 0; i < num_buckets - 1; i++) {
                 size_t idx = (size_t)(i + 1) * num_samples / (size_t)num_buckets;
                 if (idx >= num_samples) idx = num_samples - 1;
@@ -452,7 +454,7 @@ output_phase:;
         for (size_t i = my_start; i < my_end; i++) {
             if (i + 4 < my_end)
                 __builtin_prefetch(sorted[i + 4].ptr, 0, 0);
-            uint32_t len = sorted[i].len;
+            size_t len = sorted[i].len;
             memcpy(output_buf + out_pos, sorted[i].ptr, len);
             out_pos += len;
             if (i < total_lines - 1 || input_has_trailing_nl) {
