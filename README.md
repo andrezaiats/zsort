@@ -72,16 +72,19 @@ zsort reads from a file and writes to a file or stdout.
 
 ### Thread Count
 
-By default, zsort uses all available CPU cores. You can override this with the
-`ZSORT_THREADS` environment variable:
+By default, zsort uses one thread per **physical core** (detected from the
+CPU sibling topology). The bandwidth-bound phases — the output gather and the
+partition scatter — do not benefit from running a second thread per core via
+hyperthreading; oversubscribing logical CPUs adds memory-system contention and
+is measurably slower. You can override the default with the `ZSORT_THREADS`
+environment variable:
 
 ```bash
-# Use exactly 44 threads (e.g., physical cores only on a 44c/88t system)
-ZSORT_THREADS=44 ./zsort input.txt output.txt
+# Force a specific thread count (e.g. to use all logical CPUs, or fewer)
+ZSORT_THREADS=88 ./zsort input.txt output.txt
 ```
 
-On NUMA systems with hyperthreading, limiting to the number of physical cores
-can halve CPU usage without impacting wall-clock time.
+If the topology cannot be read, zsort falls back to the online CPU count.
 
 ## 📋 Input Format
 

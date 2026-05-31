@@ -469,6 +469,46 @@ done:
     return NULL;
 }
 
+/* ── Default thread count = physical cores ─────────────────────────────
+   The output gather and partition scatter are memory-bandwidth bound.
+   Hyperthreads share a core's load/store resources and memory bandwidth, so
+   running one thread per logical CPU oversubscribes the cores and adds
+   contention (measured slower than one-thread-per-physical-core). Detect the
+   SMT factor from cpu0's sibling list and divide; fall back to the online CPU
+   count if topology is unavailable. ZSORT_THREADS overrides this entirely. */
+
+static int physical_core_count(void)
+{
+    long online = sysconf(_SC_NPROCESSORS_ONLN);
+    if (online < 1) online = 1;
+
+    int fd = open("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list",
+                  O_RDONLY);
+    if (fd < 0) return (int)online;
+
+    char buf[256];
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) return (int)online;
+    buf[n] = '\0';
+
+    /* Count CPUs listed as siblings of cpu0 = threads per core. Handles both
+       comma lists and dash ranges, e.g. "0,44" or "0-1,44-45". */
+    int siblings = 0;
+    char *p = buf;
+    while (*p && *p != '\n') {
+        long lo = strtol(p, &p, 10);
+        long hi = lo;
+        if (*p == '-') { p++; hi = strtol(p, &p, 10); }
+        siblings += (int)(hi - lo + 1);
+        if (*p == ',') p++;
+    }
+    if (siblings < 1) siblings = 1;
+
+    int phys = (int)(online / (long)siblings);
+    return phys < 1 ? 1 : phys;
+}
+
 /* ── Main ──────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
@@ -483,7 +523,7 @@ int main(int argc, char *argv[])
         if (env && atoi(env) > 0) {
             nthreads = atoi(env);
         } else {
-            nthreads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+            nthreads = physical_core_count();
         }
         if (nthreads < 1) nthreads = 1;
     }
